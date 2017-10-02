@@ -1,6 +1,8 @@
 # getxmageimages
 This is a command line tool to grab images from scryfall.com for use with Xmage.  I wrote this to quickly gather images as the built in image funcationality and many of the suggestions on the Xmage reddit sidebar were too annoying for me to use :p
 
+NOTE: if you're using this tool, make sure that the check for new images at startup and store images in zip files options are DISABLED under preferences -> images.
+
 # How to use
 
 ## Windows
