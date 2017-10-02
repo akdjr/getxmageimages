@@ -1,0 +1,15 @@
+{
+  "name": "getxmageimages",
+  "version": "1.0.0",
+  "description": "Retrieves images from scryfall.com for use with XMage",
+  "main": "getimages.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Akshay Dhalwala",
+  "license": "MIT",
+  "dependencies": {
+    "async": "^2.5.0",
+    "request": "^2.83.0"
+  }
+}
