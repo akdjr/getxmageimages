@@ -118,7 +118,7 @@ function printUsage() {
 }
 
 if (process.argv.length > 2) {
-	var set = process.argv[3].toUpperCase();
+	var set = process.argv[2].toUpperCase();
 
 	if (set === 'HELP') {
 		printUsage();
