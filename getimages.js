@@ -39,7 +39,7 @@ function processPage (set, url, fns, done) {
 				}
 
 				// check if this is a multi-face card
-				if (card.card_faces && card.card_faces.length > 0) {
+				if (card.card_faces && card.card_faces.length > 0 && card.layout != 'split') {
 					// process each face as an individual card
 					card.card_faces.forEach((card_face) => {
 						fns.push((next) => {
@@ -63,6 +63,10 @@ function processPage (set, url, fns, done) {
 						console.log(`Downloading image for '${card.name}'`);
 						if (!fs.existsSync(`./${set}`)) {
 							fs.mkdirSync(`./${set}`);
+						}
+
+						if (card.name.indexOf('//') !== -1) {
+							card.name = card.name.replace('//', '-');
 						}
 
 						// download the image
