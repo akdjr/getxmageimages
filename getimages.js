@@ -1,118 +1,141 @@
-var async = require('async');
-var request = require('request');
-var fs = require('fs');
+import fs from 'fs';
+import got from 'got';
 
 const api = 'https://api.scryfall.com';
-var delay = 100;
+const delay = 100;
 
-var set = (set) => `${api}/sets/${set}`;
-var card = (set, number) => `${api}/sets/cards/${set}/${number}`;
-var setCards = (set) => `${api}/cards/search?q=${encodeURIComponent(`++e:${set}`)}&format=json`;
+const set = (set) => `${api}/sets/${set}`;
+const card = (set, number) => `${api}/sets/cards/${set}/${number}`;
+const setCards = (set) => `${api}/cards/search?q=${encodeURIComponent(`++e:${set}`)}&format=json`;
 
-function processPage (set, url, fns, done) {
-	request({
-		url: url,
-		json: true
-	}, function (error, response, body) {
-		var stop = false;
+let cards = {
+	cardData: [],
+	[Symbol.asyncIterator]() {
+		return {
+			index: 0,
+			cardData: this.cardData,
 
-		if (error || (!response) || (response && response.statusCode !== 200)) {
-			console.log('An error occured while trying to query ScryFall');
-			console.log(error);
-			console.log(`${statusCode}: ${body}`);
-			stop = true;
-		} else {
-			body.data.forEach((card, index) => {
-				// check if it this card has alternate art by seeing if a card with a duplicate name exists
-				// scryfall's default sort is by name, so we just look before or after the current card
-				var alternate = false;
-				if (body.data[index-1]) {
-					if (card.name === body.data[index-1].name) {
-						alternate = true;
-					}
-				}
+			async next() {
+				if (this.index < this.cardData.length) {
+					// process card
+					let i = this.index;
+					const card = this.cardData[i];
+					this.index++;
 
-				if (body.data[index+1]) {
-					if (card.name === body.data[index+1].name) {
-						alternate = true;
-					}
-				}
-
-				// check if this is a multi-face card
-				if (card.card_faces && card.card_faces.length > 0 && card.layout != 'split') {
-					// process each face as an individual card
-					card.card_faces.forEach((card_face) => {
-						fns.push((next) => {
-							console.log(`Downloading image for '${card_face.name}'`);
-							if (!fs.existsSync(`./${set}`)) {
-								fs.mkdirSync(`./${set}`);
-							}
-							// download the image
-							// xmage requires the card collector number in the filename to indicate alternate art versions of a card
-							var stream = request(card_face.image_uris.normal)
-								.pipe(fs.createWriteStream(`./${set}/${card_face.name}${alternate ? `.${card.collector_number}` : ''}.full.jpg`))
-								.on('finish', () => {
-									setTimeout(() => {
-										return next();
-									}, delay);
-								});
-						});
-					});
-				} else {
-					fns.push((next) => {
-						console.log(`Downloading image for '${card.name}'`);
-						if (!fs.existsSync(`./${set}`)) {
-							fs.mkdirSync(`./${set}`);
-						}
-
-						if (card.name.indexOf('//') !== -1) {
-							card.name = card.name.replace('//', '-');
-						}
-
-						// download the image
-						// xmage requires the card collector number in the filename to indicate alternate art versions of a card
-						var stream = request(card.image_uris.normal)
-							.pipe(fs.createWriteStream(`./${set}/${card.name}${alternate ? `.${card.collector_number}` : ''}.full.jpg`))
+					console.log(`Downloading image for '${card.name}'`);
+					// download the image
+					// xmage requires the card collector number in the filename to indicate alternate art versions of a card
+					let promise = new Promise((resolve, reject) => {
+						let stream = 
+							got.stream(card.imageUri)
+							.pipe(fs.createWriteStream(card.filePath))
 							.on('finish', () => {
 								setTimeout(() => {
-									return next();
+									resolve();
+								}, delay);
+							})
+							.on('error', (error) => {
+								setTimeout(() => {
+									reject(error);
 								}, delay);
 							});
 					});
-				}
-			});
-		}
 
-		setTimeout(() => {
-			if (stop) {
-				process.nextTick(() => {
-					done();
-				});
-			} else {
-				if (body.has_more) {
-					process.nextTick(() => {
-						processPage(set, body.next_page, fns, done);
+					const download = await promise.catch((error) => {
+						console.log('Download error: ', error);
 					});
+					
+					return Promise.resolve({ 
+						done: false, 
+						value: this.cardData[i]
+					})
 				} else {
-					process.nextTick(() => {
-						done();
+					return Promise.resolve({ 
+						done: true 
 					});
 				}
 			}
-		}, delay);
+		}
+	}
+};
+
+async function processPageAsync(set, url) {
+	const body = await got.get(url).json().catch((error) => {
+		console.log('An error occured while trying to query ScryFall');
+		console.log(error);
+
+		return Promise.reject(error);
 	});
+
+	let index = 0;
+	for (const card of body.data) {
+		// check if it this card has alternate art by seeing if a card with a duplicate name exists
+		// scryfall's default sort is by name, so we just look before or after the current card
+		let alternate = false;
+		if (body.data[index-1]) {
+			if (card.name === body.data[index-1].name) {
+				alternate = true;
+			}
+		}
+
+		if (body.data[index+1]) {
+			if (card.name === body.data[index+1].name) {
+				alternate = true;
+			}
+		}
+
+		// check if this is a multi-face card
+		if (card.card_faces && card.card_faces.length > 0 && card.layout != 'split') {
+			// process each face as an individual card
+			for (const card_face of card.card_faces) {
+				cards.cardData.push({
+					name: card_face.name,
+					imageUri: card_face.image_uris.normal,
+					filePath: `./${set}/${card_face.name}${alternate ? `.${card.collector_number}` : ''}.full.jpg`
+				});
+			}
+		} else {
+			if (card.name.indexOf('//') !== -1) {
+				card.name = card.name.replace('//', '-');
+			}
+
+			cards.cardData.push({
+				name: card.name,
+				imageUri: card.image_uris.normal,
+				filePath: `./${set}/${card.name}${alternate ? `.${card.collector_number}` : ''}.full.jpg`
+			});
+		}
+
+		index++;
+	}
+
+	if (body.has_more) {
+		return await processPageAsync(set, body.next_page);
+	} else {
+		// download cards
+		for await (let card of cards) {
+			console.log(`Downloaded image for '${card.name}'`);
+		}
+
+		return Promise.resolve();
+	}
 }
 
-function downloadImages (set) {
+async function downloadImagesAsync(set) {
 	// perform initial search
 	console.log(`Downloading images for ${set}`);
-	var fns = [];
-	processPage(set, setCards(set), fns, () => {
-		async.waterfall(fns, function (result) {
-			console.log('Done downloading images');
-			process.exit(0);
-		});
+
+	if (!fs.existsSync(`./${set}`)) {
+		fs.mkdirSync(`./${set}`);
+	}
+
+	const result = await processPageAsync(set, setCards(set)).catch((error) => {
+		console.log('error: ', error);
+		process.exit(0);
 	});
+
+	console.log('Done downloading images');
+	process.exit(0);
 }
 
 function printUsage() {
@@ -122,13 +145,13 @@ function printUsage() {
 }
 
 if (process.argv.length > 2) {
-	var set = process.argv[2].toUpperCase();
+	const set = process.argv[2].toUpperCase();
 
 	if (set === 'HELP') {
 		printUsage();
 		process.exit(0);
 	} else {
-		downloadImages(set);
+		downloadImagesAsync(set);
 	}
 } else {
 	printUsage();
